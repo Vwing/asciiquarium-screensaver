@@ -1,0 +1,46 @@
+Changes for Asciiquarium
+
+Version 1.6
+    - Implemented windows screensaver port built natively in c++
+
+Version 1.5
+    - Fix CPU usage growth caused by orphaned hook_point entities (ku1ik)
+      https://github.com/nothub/asciiquarium/pull/7
+
+Version 1.4
+    - Add a mode where you can add creatures (hughdavenport)
+      https://github.com/nothub/asciiquarium/pull/4
+    - Add hotkey 't' to toggle transparency during runtime (viggou)
+      https://github.com/nothub/asciiquarium/pull/5
+
+Version 1.3
+    - Change castle color from bright white to white (planet36)
+      https://github.com/nothub/asciiquarium/pull/1
+    - Prevent 'hook_point' from dropping 1 more row than 'fishhook' (planet36)
+      https://github.com/nothub/asciiquarium/pull/2
+    - Make some external blank cells transparent (planet36)
+      https://github.com/nothub/asciiquarium/pull/3
+
+Version 1.2
+    - Added lost elements by Kirk Baucom (driechers)
+      https://github.com/cmatsuoka/asciiquarium/pull/5
+    - Added yellow submarine by Carl Pilcher (driechers)
+      https://github.com/cmatsuoka/asciiquarium/pull/6
+    - Added swordfish by ctr (robert1003)
+      https://github.com/cmatsuoka/asciiquarium/pull/12
+    - Added contributors and readme (polettix)
+      https://github.com/polettix/asciiquarium
+    - Added background color and transparency option (UndeadLeech)
+      https://github.com/rwxrob/dot/blob/main/scripts/fishies
+    - Added castle door animation and swordfish fix (kronos-chenchang)
+      https://github.com/kronos-chenchang/asciiquarium
+    - Added screensaver mode (phanirithvij)
+      https://gist.github.com/nothub/91ff81bd945eb8f1e6af08492a13ff75?permalink_comment_id=4476043#gistcomment-4476043
+    - Added help flag (nothub)
+      https://github.com/nothub/asciiquarium/commit/53590bf26ce454477a1aee35d6cd07b20bef924a
+
+Version 1.1
+	- Add new fish species
+
+Version 1.0
+	- Initial public release
