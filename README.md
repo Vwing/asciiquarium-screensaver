@@ -50,9 +50,7 @@ To install a local build, keep those two files in the same folder, then right-cl
 
 ## Known Bugs
 
-- Timing and movement speeds do not entirely match the Perl script.
-- Some sprites do not have exactly correct transparency.
-- Colors are somewhat different from the terminal version.
+- Colors are different than the curses-rendered Perl script.
 
 ## License
 

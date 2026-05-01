@@ -1,5 +1,8 @@
 Changes for Asciiquarium
 
+Version 1.7
+    - Improved c++ screensaver port to be closer to perl-accurate
+
 Version 1.6
     - Implemented windows screensaver port built natively in c++
 
