@@ -39,7 +39,7 @@ static void CreateExitEvent() {
     g_ExitEvent = CreateEventW(NULL, TRUE, FALSE, g_ExitEventName.c_str());
 }
 
-static PROCESS_INFORMATION LaunchChild() {
+static PROCESS_INFORMATION LaunchChild(HWND ownerHwnd) {
     PROCESS_INFORMATION pi = {0};
     STARTUPINFOW si = {sizeof(si)};
 
@@ -50,7 +50,10 @@ static PROCESS_INFORMATION LaunchChild() {
         return pi;
     }
 
-    std::wstring cmdLine = L"\"" + appPath + L"\" --exitEvent " + g_ExitEventName;
+    std::wstringstream cmd;
+    cmd << L"\"" << appPath << L"\" --exitEvent " << g_ExitEventName
+        << L" --owner " << reinterpret_cast<UINT_PTR>(ownerHwnd);
+    std::wstring cmdLine = cmd.str();
     std::vector<wchar_t> buf(cmdLine.begin(), cmdLine.end());
     buf.push_back(0);
 
@@ -66,12 +69,17 @@ LRESULT WINAPI ScreenSaverProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
         if (!started) {
             started = true;
             CreateExitEvent();
-            g_ChildProcess = LaunchChild();
+            g_ChildProcess = LaunchChild(hwnd);
             if (!g_ChildProcess.hProcess) {
                 PostQuitMessage(0);
                 return -1;
             }
         }
+        return 0;
+
+    case WM_ACTIVATE:
+    case WM_ACTIVATEAPP:
+    case WM_NCACTIVATE:
         return 0;
 
     case WM_KEYDOWN:

@@ -184,6 +184,7 @@ struct Entity {
 // Globals
 
 static HWND   g_hwnd      = NULL;
+static HWND   g_ownerHwnd = NULL;
 static HFONT  g_font      = NULL;
 static int    g_cW        = 8;
 static int    g_cH        = 16;
@@ -1233,6 +1234,15 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR cmdLine, int) {
         g_exitEvt = OpenEventW(SYNCHRONIZE, FALSE, wev.c_str());
     }
 
+    pos = cmd.find("--owner ");
+    if (pos != std::string::npos) {
+        std::string owner = cmd.substr(pos + 8);
+        size_t sp = owner.find(' ');
+        if (sp != std::string::npos) owner = owner.substr(0, sp);
+        g_ownerHwnd = reinterpret_cast<HWND>(
+            static_cast<UINT_PTR>(_strtoui64(owner.c_str(), NULL, 10)));
+    }
+
     // Cover the entire virtual screen (all monitors)
     g_sW = GetSystemMetrics(SM_CXVIRTUALSCREEN);
     g_sH = GetSystemMetrics(SM_CYVIRTUALSCREEN);
@@ -1255,7 +1265,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR cmdLine, int) {
         "AsciiquariumApp", "Asciiquarium",
         WS_POPUP | WS_VISIBLE,
         sX, sY, g_sW, g_sH,
-        NULL, NULL, hInst, NULL);
+        g_ownerHwnd, NULL, hInst, NULL);
 
     if (!hwnd) return 1;
 
