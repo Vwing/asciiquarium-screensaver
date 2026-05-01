@@ -1,5 +1,7 @@
 # Asciiquarium Screensaver
 
+<img width="480" height="270" alt="asciiquarium" src="https://github.com/user-attachments/assets/52c2a457-198a-4b34-b58c-27c554810967" />
+
 A Windows screensaver port of Asciiquarium, the ASCII aquarium animation originally written by Kirk Baucom.
 
 This port is based on Florian Hübner's fork: https://github.com/nothub/asciiquarium/
