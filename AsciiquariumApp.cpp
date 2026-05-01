@@ -13,6 +13,7 @@
 #include <cmath>
 #include <map>
 #include <sstream>
+#include <cstring>
 #include "AsciiAssets.h"
 
 #pragma comment(lib, "user32.lib")
@@ -263,10 +264,77 @@ static void drawArt(const ArtFrame& f, int bx, int by, bool protectExisting = fa
             char c = (col < (int)line.size()) ? line[col] : ' ';
             if (f.isTransparent(col, row)) continue;
             char m = (col < (int)mask.size()) ? mask[col] : ' ';
-            g_buf[gy][gx].ch  = (c == ' ') ? '\0' : c;
+            g_buf[gy][gx].ch  = (c == ' ' || c == '?') ? '\0' : c;
             g_buf[gy][gx].col = maskColor(m, f.color);
         }
     }
+}
+
+static std::string maskByChars(const char* art, char fallbackMask, const char* whiteChars) {
+    std::string mask;
+    for (const char* p = art; *p; ++p) {
+        if (*p == '\n') {
+            mask += '\n';
+        } else if (*p == ' ') {
+            mask += ' ';
+        } else if (std::strchr(whiteChars, *p)) {
+            mask += 'W';
+        } else {
+            mask += fallbackMask;
+        }
+    }
+    return mask;
+}
+
+static void solidifyInteriorRowSpaces(ArtFrame& f, int firstRow = 0, bool includeQuestionMarks = false) {
+    for (int row = 0; row < f.h; ++row) {
+        if (row < firstRow) continue;
+        int first = -1;
+        int last = -1;
+        for (int col = 0; col < f.w; ++col) {
+            char c = f.charAt(col, row);
+            if (c != ' ' && c != '?') {
+                if (first < 0) first = col;
+                last = col;
+            }
+        }
+        if (first < 0 || last <= first) continue;
+        for (int col = first + 1; col < last; ++col) {
+            char c = f.charAt(col, row);
+            if (c == ' ' || (includeQuestionMarks && c == '?'))
+                f.outsideSpace[row][col] = 0;
+        }
+    }
+}
+
+static std::string joinLines(const std::vector<std::string>& lines, size_t first, size_t count) {
+    std::string out;
+    size_t end = std::min(lines.size(), first + count);
+    for (size_t i = first; i < end; ++i) {
+        out += lines[i];
+        out += '\n';
+    }
+    return out;
+}
+
+static std::string maskFromVisibleChars(const std::vector<std::string>& lines, char maskChar) {
+    std::string out;
+    for (const auto& line : lines) {
+        for (char c : line)
+            out += (c == ' ') ? ' ' : maskChar;
+        out += '\n';
+    }
+    return out;
+}
+
+static std::vector<std::string> fixedHeightTail(std::vector<std::string> lines, size_t height) {
+    while (lines.size() > height && lines.front().empty())
+        lines.erase(lines.begin());
+    if (lines.size() > height)
+        lines.erase(lines.begin(), lines.begin() + (lines.size() - height));
+    while (lines.size() < height)
+        lines.insert(lines.begin(), "");
+    return lines;
 }
 
 static const AsciiAsset* asset(const std::string& name) {
@@ -320,6 +388,10 @@ static void setFramePeriod(Entity& e, float seconds) {
     e.frameRate = 0;
 }
 
+static void setFrameDelta(Entity& e, float perlFrameDelta) {
+    setFramePeriod(e, perlFrameDelta > 0.0f ? kTickSeconds / perlFrameDelta : 0.0f);
+}
+
 static int minutesToTicks(int minutes) {
     return minutes * 60 * 1000 / kTimerMs;
 }
@@ -369,7 +441,7 @@ static void makeSeaweed(int x) {
     e.x = (float)x;
     e.y = (float)(g_rows - ht);
     e.depth = 21;
-    setFramePeriod(e, 0.25f + ((float)rand() / (float)RAND_MAX) * 0.05f);
+    setFrameDelta(e, 0.25f + ((float)rand() / (float)RAND_MAX) * 0.05f);
     e.life = minutesToTicks(8) + rand() % minutesToTicks(4);
     e.frames.push_back(buildSeaweedFrame(ht, false));
     e.frames.push_back(buildSeaweedFrame(ht, true));
@@ -392,15 +464,10 @@ static void makeCastle() {
     if (!e.frames.empty())
         e.y = (float)(g_rows - e.frames[0].h);
     if (e.frames.size() >= 6) {
-        for (int i = 0; i < 18; ++i) e.frameSequence.push_back(0);
-        e.frameSequence.push_back(1);
-        e.frameSequence.push_back(2);
-        for (int i = 0; i < 18; ++i) e.frameSequence.push_back(3);
-        e.frameSequence.push_back(4);
-        e.frameSequence.push_back(5);
+        for (int i = 0; i < 6; ++i) e.frameSequence.push_back(i);
         e.frame = e.frameSequence[0];
     }
-    setFramePeriod(e, 0.1f);
+    setFrameDelta(e, 0.1f);
     g_entities.push_back(e);
 }
 
@@ -437,8 +504,9 @@ static void makeFish() {
 // Shark
 
 static void makeMovingAsset(const std::string& name, COLORREF fallback, float speed, int depth,
-                            float y, float leftX, bool randomMask = false, float frameSeconds = 0.0f,
-                            bool spawnOnDeath = true, const std::string& tag = "creature") {
+                            float y, float leftX, bool randomMask = false, float frameDelta = 0.0f,
+                            bool spawnOnDeath = true, const std::string& tag = "creature",
+                            bool solidInteriorSpaces = false, bool solidQuestionMarks = false) {
     const AsciiAsset* a = asset(name);
     if (!a) return;
     bool goLeft = (rand() % 2) == 1;
@@ -449,15 +517,18 @@ static void makeMovingAsset(const std::string& name, COLORREF fallback, float sp
     e.dieOff = true;
     e.spawnOnDeath = spawnOnDeath;
     e.y = y;
-    if (frameSeconds > 0.0f) setFramePeriod(e, frameSeconds);
+    if (frameDelta > 0.0f) setFrameDelta(e, frameDelta);
 
     if (!a->animations.empty()) {
         int dir = goLeft && a->animations.size() > 1 ? 1 : 0;
-        for (const auto& v : a->animations[dir])
+        for (const auto& v : a->animations[dir]) {
             e.frames.push_back(frameFromVariant(v, fallback, randomMask));
+            if (solidInteriorSpaces) solidifyInteriorRowSpaces(e.frames.back(), 0, solidQuestionMarks);
+        }
     } else if (!a->variants.empty()) {
         int dir = goLeft && a->variants.size() > 1 ? 1 : 0;
         e.frames.push_back(frameFromVariant(a->variants[dir], fallback, randomMask));
+        if (solidInteriorSpaces) solidifyInteriorRowSpaces(e.frames.back(), 0, solidQuestionMarks);
     }
 
     if (e.frames.empty()) return;
@@ -549,7 +620,7 @@ static void makeShark() {
 
 #endif
 static void makeShip() {
-    makeMovingAsset("ship", C_WHT, 1.0f, 7, 0.0f, -24.0f);
+    makeMovingAsset("ship", C_WHT, 1.0f, 7, -1.0f, -24.0f, false, 0.0f, true, "creature", true);
     return;
 }
 #if 0
@@ -600,23 +671,32 @@ static void makeWhale() {
     e.depth = 5; e.dieOff = true; e.spawnOnDeath = true; e.y = 0.0f;
     e.vx = goLeft ? -1.0f : 1.0f;
     e.x = goLeft ? (float)(g_cols - 2) : -18.0f;
-    setFramePeriod(e, 0.25f);
+    setFrameDelta(e, 1.0f);
+    const size_t spoutRows = 4;
     std::string whaleImage = stripOneLeadingNewline(a->variants[dir].image);
     std::string whaleMask = stripOneLeadingNewline(a->variants[dir].mask);
-    for (int i = 0; i < 5; ++i)
-        e.frames.emplace_back("\n\n\n\n" + whaleImage,
-                              "\n\n\n\n" + whaleMask, C_WHT);
+    std::vector<std::string> whaleMaskLines;
+    ArtFrame::parseLines(whaleMask, whaleMaskLines);
+    std::string whaleBodyMask = joinLines(whaleMaskLines,
+        whaleMaskLines.size() > 4 ? whaleMaskLines.size() - 4 : 0, 4);
+    for (int i = 0; i < 5; ++i) {
+        e.frames.emplace_back(std::string(spoutRows, '\n') + whaleImage,
+                              std::string(spoutRows, '\n') + whaleBodyMask, C_BLB);
+        solidifyInteriorRowSpaces(e.frames.back(), (int)spoutRows);
+    }
     for (const auto& spout : a->waterSpout) {
         std::string aligned;
-        std::string maskPad;
-        std::vector<std::string> lines;
-        ArtFrame::parseLines(spout, lines);
-        for (size_t i = 0; i < lines.size(); ++i) {
-            aligned += std::string(spoutAlign, ' ') + lines[i] + "\n";
-            maskPad += "\n";
+        std::vector<std::string> spoutLines;
+        std::vector<std::string> alignedLines;
+        ArtFrame::parseLines(spout, spoutLines);
+        spoutLines = fixedHeightTail(spoutLines, spoutRows);
+        for (size_t i = 0; i < spoutLines.size(); ++i) {
+            alignedLines.push_back(std::string(spoutAlign, ' ') + spoutLines[i]);
+            aligned += alignedLines.back() + "\n";
         }
         e.frames.emplace_back(aligned + whaleImage,
-                              maskPad + whaleMask, C_WHT);
+                              maskFromVisibleChars(alignedLines, 'C') + whaleBodyMask, C_BLB);
+        solidifyInteriorRowSpaces(e.frames.back(), (int)spoutRows);
     }
     g_entities.push_back(e);
     return;
@@ -655,7 +735,8 @@ static void makeWhale() {
 
 #endif
 static void makeMonster() {
-    makeMovingAsset("new_monster", C_GRB, 2.0f, 5, 2.0f, -54.0f, false, 0.25f);
+    makeMovingAsset("new_monster", C_GRB, 2.0f, 5, 1.0f, -54.0f, false, 0.25f,
+                    true, "creature", true);
     return;
 }
 #if 0
@@ -705,11 +786,12 @@ static void makeSwordFish() {
 }
 
 static void makeDucks() {
-    makeMovingAsset("duck", C_WHT, 1.0f, 3, 5.0f, -30.0f, false, 0.25f);
+    makeMovingAsset("duck", C_WHT, 1.0f, 3, 4.0f, -30.0f, false, 0.25f,
+                    true, "creature", true);
 }
 
 static void makeSwan() {
-    makeMovingAsset("swan", C_WHT, 1.0f, 3, 1.0f, -10.0f);
+    makeMovingAsset("swan", C_WHT, 1.0f, 3, 0.0f, -10.0f, false, 0.0f, true, "creature", true);
 }
 
 static void makeSubmarine() {
@@ -737,7 +819,7 @@ static void makeDolphins() {
     float speed = goLeft ? -1.0f : 1.0f;
     float startX = goLeft ? (float)(g_cols - 2) : -13.0f;
     float distance = goLeft ? -15.0f : 15.0f;
-    const float ys[] = {5.0f, 2.0f, 8.0f};
+    const float ys[] = {6.0f, 3.0f, 9.0f};
     const int delays[] = {24, 12, 0};
     int group = g_nextGroup++;
     for (int i = 0; i < 3; ++i) {
@@ -756,7 +838,7 @@ static void makeDolphins() {
         for (int n = 0; n < 2; ++n) e.path.push_back(std::make_pair(speed, 0.0f));
         for (int n = 0; n < 14; ++n) e.path.push_back(std::make_pair(speed, 0.5f));
         for (int n = 0; n < 6; ++n) e.path.push_back(std::make_pair(speed, 0.0f));
-        setFramePeriod(e, 0.5f);
+        setFrameDelta(e, 0.5f);
         for (const auto& v : a->animations[dir])
             e.frames.push_back(frameFromVariant(v, i == 0 ? C_CYB : (i == 1 ? C_BLB : C_BLU)));
         g_entities.push_back(e);
@@ -785,6 +867,7 @@ static void makeFishhook() {
     e.x = (float)x; e.y = -4.0f;
     e.vy = 1.0f; e.depth = 6; e.dieOff = true; e.spawnOnDeath = true;
     e.frames.emplace_back(hook, C_GRB);
+    solidifyInteriorRowSpaces(e.frames.back(), 0, true);
     g_entities.push_back(e);
 
     Entity point;
@@ -805,7 +888,7 @@ static void makeBubble(float bx, float by) {
     e.vy = -1.0f;
     e.depth = 2;
     e.dieOff = true;
-    setFramePeriod(e, 0.1f);
+    setFrameDelta(e, 0.1f);
     for (auto* a : barts) e.frames.emplace_back(a, C_CYB);
     g_entities.push_back(e);
 }
@@ -820,9 +903,9 @@ static void makeSplat(float x, float y, int depth) {
     Entity e;
     e.alive = true; e.tag = "splat";
     e.x = x - 4.0f; e.y = y - 2.0f; e.depth = depth - 2;
-    e.life = secondsToTicks(1.0f);
-    setFramePeriod(e, 0.25f);
-    for (auto* f : frames) e.frames.emplace_back(f, C_REB, true);
+    e.life = 15;
+    setFrameDelta(e, 0.25f);
+    for (auto* f : frames) e.frames.emplace_back(f, C_RED, true);
     g_entities.push_back(e);
 }
 
@@ -1054,6 +1137,9 @@ static void updateEntities() {
 static void buildBuffer() {
     clearBuf();
 
+    std::vector<std::string> dolphinVisible(g_rows, std::string(g_cols, 0));
+    std::vector<std::string> hookVisible(g_rows, std::string(g_cols, 0));
+
     // Collect pointers sorted backâ†’front (highest depth first)
     std::vector<Entity*> order;
     order.reserve(g_entities.size());
@@ -1072,10 +1158,61 @@ static void buildBuffer() {
             int tileW = std::max(1, f.w);
             int bx = 0;
             int by = (int)e.y;
-            for (int t = 0; bx + t * tileW < g_cols + tileW; ++t)
-                drawArt(f, bx + t * tileW, by, true);
+            for (int t = 0; bx + t * tileW < g_cols + tileW; ++t) {
+                int tx = bx + t * tileW;
+                if (e.depth != 2 && e.depth != 4) {
+                    drawArt(f, tx, by, true);
+                    continue;
+                }
+                for (int row = 0; row < f.h; ++row) {
+                    int gy = by + row;
+                    if (gy < 0 || gy >= g_rows) continue;
+                    const std::string& line = (row < (int)f.rows.size()) ? f.rows[row] : "";
+                    const std::string& mask = (row < (int)f.maskRows.size()) ? f.maskRows[row] : "";
+                    for (int col = 0; col < f.w; ++col) {
+                        int gx = tx + col;
+                        if (gx < 0 || gx >= g_cols) continue;
+                        bool coverTarget = (e.depth == 2 && dolphinVisible[gy][gx]) ||
+                                           ((e.depth == 2 || e.depth == 4) && hookVisible[gy][gx]);
+                        if (g_buf[gy][gx].ch != ' ' && !coverTarget) continue;
+                        char c = (col < (int)line.size()) ? line[col] : ' ';
+                        if (f.isTransparent(col, row)) {
+                            if (coverTarget) {
+                                g_buf[gy][gx].ch = '\0';
+                                g_buf[gy][gx].col = C_BLK;
+                            }
+                            continue;
+                        }
+                        char m = (col < (int)mask.size()) ? mask[col] : ' ';
+                        g_buf[gy][gx].ch = (c == ' ' || c == '?') ? '\0' : c;
+                        g_buf[gy][gx].col = maskColor(m, f.color);
+                    }
+                }
+            }
         } else {
             drawArt(f, (int)e.x, (int)e.y);
+            if (e.tag == "dolphin") {
+                for (int row = 0; row < f.h; ++row) {
+                    int sy = (int)e.y + row;
+                    if (sy < 0 || sy >= g_rows) continue;
+                    for (int col = 0; col < f.w; ++col) {
+                        int sx = (int)e.x + col;
+                        if (sx >= 0 && sx < g_cols && !f.isTransparent(col, row))
+                            dolphinVisible[sy][sx] = 1;
+                    }
+                }
+            }
+            if (e.tag == "fishhook" || e.tag == "fishline") {
+                for (int row = 0; row < f.h; ++row) {
+                    int sy = (int)e.y + row;
+                    if (sy < 0 || sy >= g_rows) continue;
+                    for (int col = 0; col < f.w; ++col) {
+                        int sx = (int)e.x + col;
+                        if (sx >= 0 && sx < g_cols && !f.isTransparent(col, row))
+                            hookVisible[sy][sx] = 1;
+                    }
+                }
+            }
         }
     }
 }
