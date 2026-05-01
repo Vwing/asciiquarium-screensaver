@@ -185,6 +185,7 @@ struct Entity {
 
 static HWND   g_hwnd      = NULL;
 static HWND   g_ownerHwnd = NULL;
+static bool   g_previewMode = false;
 static HFONT  g_font      = NULL;
 static int    g_cW        = 8;
 static int    g_cH        = 16;
@@ -1195,22 +1196,30 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     case WM_KEYDOWN:
     case WM_LBUTTONDOWN:
     case WM_RBUTTONDOWN:
-        PostQuitMessage(0);
+        if (g_previewMode) return 0;
+        if (g_exitEvt) SetEvent(g_exitEvt);
+        if (g_ownerHwnd && IsWindow(g_ownerHwnd)) PostMessageA(g_ownerHwnd, WM_CLOSE, 0, 0);
+        DestroyWindow(hwnd);
         return 0;
 
     case WM_MOUSEMOVE: {
+        if (g_previewMode) return 0;
         static POINT last = {-1, -1};
         POINT cur = { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
         if (last.x == -1) { last = cur; return 0; }
         if ((GetTickCount() - g_startTick) < 2000) return 0;
-        if (cur.x != last.x || cur.y != last.y) PostQuitMessage(0);
+        if (cur.x != last.x || cur.y != last.y) {
+            if (g_exitEvt) SetEvent(g_exitEvt);
+            if (g_ownerHwnd && IsWindow(g_ownerHwnd)) PostMessageA(g_ownerHwnd, WM_CLOSE, 0, 0);
+            DestroyWindow(hwnd);
+        }
         return 0;
     }
 
     case WM_DESTROY:
         KillTimer(hwnd, 1);
         if (g_font) { DeleteObject(g_font); g_font = NULL; }
-        ShowCursor(TRUE);
+        if (!g_previewMode) ShowCursor(TRUE);
         PostQuitMessage(0);
         return 0;
     }
@@ -1231,7 +1240,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR cmdLine, int) {
         int len = MultiByteToWideChar(CP_UTF8, 0, evName.c_str(), -1, NULL, 0);
         std::wstring wev(len, 0);
         MultiByteToWideChar(CP_UTF8, 0, evName.c_str(), -1, &wev[0], len);
-        g_exitEvt = OpenEventW(SYNCHRONIZE, FALSE, wev.c_str());
+        g_exitEvt = OpenEventW(SYNCHRONIZE | EVENT_MODIFY_STATE, FALSE, wev.c_str());
     }
 
     pos = cmd.find("--owner ");
@@ -1243,13 +1252,25 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR cmdLine, int) {
             static_cast<UINT_PTR>(_strtoui64(owner.c_str(), NULL, 10)));
     }
 
-    // Cover the entire virtual screen (all monitors)
-    g_sW = GetSystemMetrics(SM_CXVIRTUALSCREEN);
-    g_sH = GetSystemMetrics(SM_CYVIRTUALSCREEN);
-    int sX = GetSystemMetrics(SM_XVIRTUALSCREEN);
-    int sY = GetSystemMetrics(SM_YVIRTUALSCREEN);
-    if (g_sW < 1) g_sW = GetSystemMetrics(SM_CXSCREEN);
-    if (g_sH < 1) g_sH = GetSystemMetrics(SM_CYSCREEN);
+    g_previewMode = cmd.find("--preview") != std::string::npos &&
+                    g_ownerHwnd && IsWindow(g_ownerHwnd);
+
+    int sX = 0;
+    int sY = 0;
+    if (g_previewMode && g_ownerHwnd && IsWindow(g_ownerHwnd)) {
+        RECT rc = {};
+        GetClientRect(g_ownerHwnd, &rc);
+        g_sW = std::max(1L, rc.right - rc.left);
+        g_sH = std::max(1L, rc.bottom - rc.top);
+    } else {
+        // Cover the entire virtual screen (all monitors)
+        g_sW = GetSystemMetrics(SM_CXVIRTUALSCREEN);
+        g_sH = GetSystemMetrics(SM_CYVIRTUALSCREEN);
+        sX = GetSystemMetrics(SM_XVIRTUALSCREEN);
+        sY = GetSystemMetrics(SM_YVIRTUALSCREEN);
+        if (g_sW < 1) g_sW = GetSystemMetrics(SM_CXSCREEN);
+        if (g_sH < 1) g_sH = GetSystemMetrics(SM_CYSCREEN);
+    }
 
     WNDCLASSA wc = {};
     wc.style         = CS_HREDRAW | CS_VREDRAW;
@@ -1260,16 +1281,20 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR cmdLine, int) {
     wc.hCursor       = NULL;
     RegisterClassA(&wc);
 
+    DWORD exStyle = g_previewMode ? 0 : WS_EX_TOPMOST;
+    DWORD style = g_previewMode ? (WS_CHILD | WS_VISIBLE) : (WS_POPUP | WS_VISIBLE);
+
     HWND hwnd = CreateWindowExA(
-        WS_EX_TOPMOST,
+        exStyle,
         "AsciiquariumApp", "Asciiquarium",
-        WS_POPUP | WS_VISIBLE,
+        style,
         sX, sY, g_sW, g_sH,
         g_ownerHwnd, NULL, hInst, NULL);
 
     if (!hwnd) return 1;
 
-    ShowCursor(FALSE);
+    if (!g_previewMode)
+        ShowCursor(FALSE);
 
     MSG msg = {};
     while (GetMessageA(&msg, NULL, 0, 0) > 0) {

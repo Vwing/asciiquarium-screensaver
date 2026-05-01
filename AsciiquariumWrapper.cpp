@@ -39,7 +39,12 @@ static void CreateExitEvent() {
     g_ExitEvent = CreateEventW(NULL, TRUE, FALSE, g_ExitEventName.c_str());
 }
 
-static PROCESS_INFORMATION LaunchChild(HWND ownerHwnd) {
+static bool IsPreviewWindow(HWND hwnd) {
+    LONG_PTR style = GetWindowLongPtr(hwnd, GWL_STYLE);
+    return GetParent(hwnd) != NULL || (style & WS_CHILD) != 0;
+}
+
+static PROCESS_INFORMATION LaunchChild(HWND ownerHwnd, bool previewMode) {
     PROCESS_INFORMATION pi = {0};
     STARTUPINFOW si = {sizeof(si)};
 
@@ -53,6 +58,8 @@ static PROCESS_INFORMATION LaunchChild(HWND ownerHwnd) {
     std::wstringstream cmd;
     cmd << L"\"" << appPath << L"\" --exitEvent " << g_ExitEventName
         << L" --owner " << reinterpret_cast<UINT_PTR>(ownerHwnd);
+    if (previewMode)
+        cmd << L" --preview";
     std::wstring cmdLine = cmd.str();
     std::vector<wchar_t> buf(cmdLine.begin(), cmdLine.end());
     buf.push_back(0);
@@ -63,13 +70,15 @@ static PROCESS_INFORMATION LaunchChild(HWND ownerHwnd) {
 
 LRESULT WINAPI ScreenSaverProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     static bool started = false;
+    static bool previewMode = false;
 
     switch (msg) {
     case WM_CREATE:
         if (!started) {
             started = true;
+            previewMode = IsPreviewWindow(hwnd);
             CreateExitEvent();
-            g_ChildProcess = LaunchChild(hwnd);
+            g_ChildProcess = LaunchChild(hwnd, previewMode);
             if (!g_ChildProcess.hProcess) {
                 PostQuitMessage(0);
                 return -1;
@@ -82,10 +91,17 @@ LRESULT WINAPI ScreenSaverProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
     case WM_NCACTIVATE:
         return 0;
 
+    case WM_CLOSE:
+        DestroyWindow(hwnd);
+        return 0;
+
     case WM_KEYDOWN:
     case WM_LBUTTONDOWN:
     case WM_RBUTTONDOWN:
     case WM_MOUSEMOVE: {
+        if (previewMode)
+            return 0;
+
         if (msg == WM_MOUSEMOVE) {
             static POINT last = {-1, -1};
             POINT cur = {GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};

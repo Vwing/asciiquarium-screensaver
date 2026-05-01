@@ -32,7 +32,7 @@ if errorlevel 1 (
     )
 )
 
-"%MSBUILD%" AsciiquariumScreensaver.sln /p:Configuration=Release /p:Platform=x64 /m
+cmake --build . --config Release --target AsciiquariumApp Asciiquarium --parallel
 if errorlevel 1 (
     echo ERROR: Build failed.
     exit /b 1
