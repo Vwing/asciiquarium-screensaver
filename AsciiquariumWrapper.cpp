@@ -21,10 +21,10 @@ static std::wstring GetAppPath() {
     wchar_t path[MAX_PATH];
     GetModuleFileNameW(NULL, path, MAX_PATH);
     std::wstring p(path);
-    size_t dot = p.find_last_of(L'.');
-    if (dot != std::wstring::npos)
-        p = p.substr(0, dot) + L"App.exe";
-    return p;
+    size_t slash = p.find_last_of(L"\\/");
+    if (slash == std::wstring::npos)
+        return L"AsciiquariumApp.exe";
+    return p.substr(0, slash + 1) + L"AsciiquariumApp.exe";
 }
 
 static void CreateExitEvent() {
