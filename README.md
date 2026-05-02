@@ -53,6 +53,10 @@ To install a local build, keep those two files in the same folder, then right-cl
 ## Known Bugs
 
 - Colors are different than the curses-rendered Perl script.
+- Whale is on the wrong row.
+- Hook string should be grey.
+- Hook should bring fishes it catches onto its same render layer.
+- Dolphins should be more spaced out (though the chaos of the current version is also appealing)
 
 ## License
 
