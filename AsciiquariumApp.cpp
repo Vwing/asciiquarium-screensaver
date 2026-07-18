@@ -15,6 +15,7 @@
 #include <sstream>
 #include <cstring>
 #include "AsciiAssets.h"
+#include "AsciiquariumSettings.h"
 
 #pragma comment(lib, "user32.lib")
 #pragma comment(lib, "gdi32.lib")
@@ -205,10 +206,10 @@ static int    g_tick            = 0;
 static int    g_fishCount       = 0;
 static bool   g_spawningCreature = false;
 static int    g_nextGroup       = 1;
+static AsciiquariumSettings g_settings;
 
 static const int kTimerMs = 100;
 static const float kTickSeconds = (float)kTimerMs / 1000.0f;
-static const int kTargetScreenRows = 96;
 
 // Buffer
 
@@ -848,17 +849,22 @@ static void makeDolphins() {
 static void makeFishhook() {
     static const char* hook = "\n       o\n      ||\n      ||\n/ \\???||\n  \\__//\n  `--'\n";
     int x = 10 + rand() % std::max(1, g_cols - 20);
+    // Keep the top of the fishing line above the screen even when the hook
+    // descends through a very tall aquarium. The original's fixed 50 rows
+    // only covered terminal-sized displays.
+    int lineLength = std::max(50, g_rows);
 
     Entity line;
     int group = g_nextGroup++;
     line.alive = true; line.tag = "fishline";
     line.group = group;
-    line.x = (float)(x + 7); line.y = -54.0f;
+    line.x = (float)(x + 7); line.y = (float)(-4 - lineLength);
     line.vy = 1.0f; line.depth = 6;
     std::string lineArt;
-    for (int i = 0; i < 50; ++i) lineArt += "|\n";
+    for (int i = 0; i < lineLength; ++i) lineArt += "|\n";
     for (int i = 0; i < 6; ++i) lineArt += " \n";
-    line.frames.emplace_back(lineArt, C_GRB);
+    // The line uses the terminal's neutral string color; only the hook is green.
+    line.frames.emplace_back(lineArt, C_GRY);
     g_entities.push_back(line);
 
     Entity e;
@@ -1110,7 +1116,9 @@ static void updateEntities() {
     // Each fish gets its own Perl-style chance to emit a bubble.
     std::vector<std::pair<float, float>> bubblePos;
     for (const auto& e : g_entities) {
-        if (e.alive && e.tag == "fish" && !e.retracting && rand() % 100 > 97) {
+        int bubbleChance = 2 * (int)g_settings.bubblePercent;
+        if (e.alive && e.tag == "fish" && !e.retracting &&
+            rand() % 10000 < bubbleChance) {
             float bx = e.x + (e.vx > 0 ? (float)e.fw() : 0.0f);
             float by = e.y + (float)(e.fh() / 2);
             bubblePos.push_back(std::make_pair(bx, by));
@@ -1120,7 +1128,8 @@ static void updateEntities() {
         makeBubble(p.first, p.second);
 
     // Maintain fish population
-    int targetFish = ((std::max(1, g_rows - 9) * g_cols) / 350);
+    int targetFish = ((std::max(1, g_rows - 9) * g_cols) / 350) *
+                     (int)g_settings.fishPercent / 100;
     if (g_fishCount < targetFish)
         makeFish();
 
@@ -1202,7 +1211,11 @@ static void buildBuffer() {
                     }
                 }
             }
-            if (e.tag == "fishhook" || e.tag == "fishline") {
+            // A reeled-in fish occupies water_gap2 just like the original.
+            // Include it in the hook mask so the two nearer wave rows cover
+            // it, while the farther rows remain behind it.
+            if (e.tag == "fishhook" || e.tag == "fishline" ||
+                (e.tag == "fish" && e.retracting)) {
                 for (int row = 0; row < f.h; ++row) {
                     int sy = (int)e.y + row;
                     if (sy < 0 || sy >= g_rows) continue;
@@ -1270,9 +1283,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     case WM_CREATE: {
         g_hwnd = hwnd;
 
-        // Tune kTargetScreenRows near the top of this file to make the
-        // aquarium denser or larger on screen.
-        int fontH = std::max(8, g_sH / kTargetScreenRows);
+        int fontH = std::max(4, g_sH / (int)g_settings.rows);
         g_font = CreateFontA(
             -fontH, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
             ANSI_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
@@ -1298,17 +1309,19 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         makeWater();
         makeCastle();
 
-        int nWeeds = g_cols / 15;
+        int nWeeds = (g_cols / 15) * (int)g_settings.seaweedPercent / 100;
         for (int i = 0; i < nWeeds; ++i)
             makeSeaweed(1 + rand() % (g_cols - 2));
 
-        int initFish = (std::max(1, g_rows - 9) * g_cols) / 350;
+        int initFish = ((std::max(1, g_rows - 9) * g_cols) / 350) *
+                       (int)g_settings.fishPercent / 100;
         for (int i = 0; i < initFish; ++i)
             makeFish();
 
         spawnCreature();
 
-        SetTimer(hwnd, 1, kTimerMs, NULL);
+        UINT timerMs = std::max(16, kTimerMs * 100 / (int)g_settings.speedPercent);
+        SetTimer(hwnd, 1, timerMs, NULL);
         g_startTick = GetTickCount();
         return 0;
     }
@@ -1367,6 +1380,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 // WinMain
 
 int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR cmdLine, int) {
+    g_settings = loadAsciiquariumSettings();
     // Parse --exitEvent <name>
     std::string cmd(cmdLine ? cmdLine : "");
     size_t pos = cmd.find("--exitEvent ");

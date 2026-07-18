@@ -22,6 +22,8 @@ add_executable(Asciiquarium WIN32
     AsciiquariumWrapper.cpp
     screensaver.def
     screensaver.rc
+    resource.h
+    AsciiquariumSettings.h
 )
 
 set_target_properties(Asciiquarium PROPERTIES

@@ -5,13 +5,13 @@
 #include <string>
 #include <sstream>
 #include <vector>
+#include "resource.h"
+#include "AsciiquariumSettings.h"
 
 #pragma comment(lib, "scrnsave.lib")
 #pragma comment(lib, "user32.lib")
 #pragma comment(lib, "gdi32.lib")
 #pragma comment(lib, "comctl32.lib")
-
-#define REGISTRY_KEY "Software\\AsciiquariumScreensaver"
 
 PROCESS_INFORMATION g_ChildProcess = {0};
 HANDLE              g_ExitEvent    = NULL;
@@ -142,12 +142,54 @@ LRESULT WINAPI ScreenSaverProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
 }
 
 BOOL WINAPI ScreenSaverConfigureDialog(HWND hDlg, UINT msg, WPARAM wParam, LPARAM) {
+    static AsciiquariumSettings settings;
+    auto setFields = [hDlg]() {
+        SetDlgItemInt(hDlg, IDC_ROWS, settings.rows, FALSE);
+        SetDlgItemInt(hDlg, IDC_SPEED, settings.speedPercent, FALSE);
+        SetDlgItemInt(hDlg, IDC_FISH, settings.fishPercent, FALSE);
+        SetDlgItemInt(hDlg, IDC_SEAWEED, settings.seaweedPercent, FALSE);
+        SetDlgItemInt(hDlg, IDC_BUBBLES, settings.bubblePercent, FALSE);
+    };
     switch (msg) {
     case WM_INITDIALOG:
+        settings = loadAsciiquariumSettings();
+        setFields();
         return TRUE;
     case WM_COMMAND:
-        if (LOWORD(wParam) == IDOK || LOWORD(wParam) == IDCANCEL) {
-            EndDialog(hDlg, LOWORD(wParam));
+        if (LOWORD(wParam) == IDC_DEFAULTS) {
+            settings = AsciiquariumSettings();
+            setFields();
+            return TRUE;
+        }
+        if (LOWORD(wParam) == IDOK) {
+            BOOL validRows = FALSE, validSpeed = FALSE, validFish = FALSE;
+            BOOL validSeaweed = FALSE, validBubbles = FALSE;
+            settings.rows = GetDlgItemInt(hDlg, IDC_ROWS, &validRows, FALSE);
+            settings.speedPercent = GetDlgItemInt(hDlg, IDC_SPEED, &validSpeed, FALSE);
+            settings.fishPercent = GetDlgItemInt(hDlg, IDC_FISH, &validFish, FALSE);
+            settings.seaweedPercent = GetDlgItemInt(hDlg, IDC_SEAWEED, &validSeaweed, FALSE);
+            settings.bubblePercent = GetDlgItemInt(hDlg, IDC_BUBBLES, &validBubbles, FALSE);
+            if (!validRows || settings.rows < 40 || settings.rows > 500 ||
+                !validSpeed || settings.speedPercent < 25 || settings.speedPercent > 300 ||
+                !validFish || settings.fishPercent < 25 || settings.fishPercent > 300 ||
+                !validSeaweed || settings.seaweedPercent > 300 ||
+                !validBubbles || settings.bubblePercent > 300) {
+                MessageBoxA(hDlg,
+                    "Rows must be 40-500. Speed and fish must be 25-300%. "
+                    "Seaweed and bubbles must be 0-300%.",
+                    "Invalid settings", MB_OK | MB_ICONWARNING);
+                return TRUE;
+            }
+            if (!saveAsciiquariumSettings(settings)) {
+                MessageBoxA(hDlg, "The settings could not be saved.",
+                            "Asciiquarium Screensaver", MB_OK | MB_ICONERROR);
+                return TRUE;
+            }
+            EndDialog(hDlg, IDOK);
+            return TRUE;
+        }
+        if (LOWORD(wParam) == IDCANCEL) {
+            EndDialog(hDlg, IDCANCEL);
             return TRUE;
         }
         break;

@@ -20,6 +20,10 @@ Right-click `Asciiquarium.scr` and choose **Install**.
 
 Windows will open the Screen Saver Settings dialog. Select **Asciiquarium** if it is not already selected.
 
+Use the **Settings** button there to control the ASCII art size (screen rows),
+animation speed, fish population, seaweed density, and bubble density. Lower row
+counts produce larger art. Settings are saved for the current Windows user.
+
 ## Build
 
 Requirements:
@@ -54,8 +58,6 @@ To install a local build, keep those two files in the same folder, then right-cl
 
 - Colors are different than the curses-rendered Perl script.
 - Whale is on the wrong row.
-- Hook string should be grey.
-- Hook should bring fishes it catches onto its same render layer.
 - Dolphins should be more spaced out (though the chaos of the current version is also appealing)
 
 ## License
